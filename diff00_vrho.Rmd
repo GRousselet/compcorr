@@ -1,0 +1,389 @@
+---
+title: "Compare independent correlations: 0 difference, vary rho"
+author: "Guillaume A. Rousselet"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_caption: no
+    number_sections: no
+    toc: yes
+    toc_depth: 2
+---
+
+# Dependencies
+```{r}
+library(ggplot2)
+library(tibble)
+library(beepr)
+source("./functions/theme_gar.txt")
+## HC4 method to compare two independent Pearson's correlations
+source("./functions/hc4.txt")
+## g & h multivariate distributions
+source("./functions/ghmult.txt")
+## bootstrap + core corr functions
+source("./functions/corfun.txt")
+## meta-function for simulations
+source("./functions/twocor.all.txt")
+## plot functions
+source("./functions/make_figures.txt")
+```
+
+```{r}
+sessionInfo()
+```
+
+# g=0, h=0
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 0
+h <- 0
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=0, h=0, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+  save(res.spear, res.pears.boot, res.pears.fish, 
+       res.pears.hc4, res.wcorr, res.pbend,
+       rhoseq, nseq, nsim, es, g, h,
+       file = "./data/diff00_g0h0_varyrho.RData")
+}
+
+beep(8)
+```
+
+## Results
+
+### Load data + generate all plot objects
+```{r}
+load("./data/diff00_g0h0_varyrho.RData")
+PO <- plot.all.fp(ylim = c(0, 0.2))
+```
+
+### Pearson + Fisher
+```{r}
+pA <- PO$p.pears.fish + guides(col = guide_legend(ncol = 3, override.aes = list(size = 3)))
+pA
+```
+
+### Pearson + bootstrap
+```{r}
+pB <- PO$p.pears.boot
+pB
+```
+
+### Pearson + HC4
+```{r}
+pC <- PO$p.pears.hc4
+pC
+```
+
+### Spearman + bootstrap
+```{r}
+pD <- PO$p.spear
+pD
+```
+
+### Percentage bend + bootstrap
+```{r}
+pE <- PO$p.pbend
+pE
+```
+
+### Winsorized correlation + bootstrap
+```{r}
+pF <- PO$p.wcorr
+pF
+```
+
+#### Combine panels
+
+```{r, eval = FALSE}
+cowplot::plot_grid(pA, pB, pC, pD, pE, pF,
+                   labels = c("A", "B", "C", "D", "E", "F"))
+ggsave("./figures/diff00_g0h0_vrho.pdf", width = 20, height = 30, units = "cm")
+```
+
+# g=0, h=0.2
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 0
+h <- 0.2
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=0, h=0.2, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+  save(res.spear, res.pears.boot, res.pears.fish, 
+       res.pears.hc4, res.wcorr, res.pbend,
+       rhoseq, nseq, nsim, es, g, h,
+       file = "./data/diff00_g0h02_varyrho.RData")
+}
+
+beep(8)
+```
+
+# g=0.2, h=0
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 0.2
+h <- 0
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=0.2, h=0, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+save(res.spear, res.pears.boot, res.pears.fish, 
+     res.pears.hc4, res.wcorr, res.pbend,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff00_g02h0_varyrho.RData")
+}
+
+beep(8)
+```
+
+# g=0.2, h=0.2
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 0.2
+h <- 0.2
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=0.2, h=0.2, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+save(res.spear, res.pears.boot, res.pears.fish, 
+     res.pears.hc4, res.wcorr, res.pbend,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff00_g02h02_varyrho.RData")
+}
+
+beep(8)
+```
+
+# g=1, h=0
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 1
+h <- 0
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=1, h=0, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+save(res.spear, res.pears.boot, res.pears.fish, 
+     res.pears.hc4, res.wcorr, res.pbend,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff00_g1h0_varyrho.RData")
+}
+
+beep(8)
+```
+
+# g=1, h=0.2
+```{r, eval = FALSE}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 5000
+es <- 0 # effect size
+g <- 1
+h <- 0.2
+res.wcorr <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pbend <- array(0, dim = c(nsim, nr, length(nseq)))
+res.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.fish <- array(0, dim = c(nsim, nr, length(nseq)))
+res.pears.hc4 <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 00, g=1, h=0.2, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 1000 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      res <- twocor.all(out1[1:nseq[N],1],out1[1:nseq[N],2],out2[1:nseq[N],1],out2[1:nseq[N],2])
+      res.wcorr[S, R, N] <- res$sig.boot.wcorr
+      res.pbend[S, R, N] <- res$sig.boot.pbcor
+      res.spear[S, R, N] <- res$sig.boot.spear
+      res.pears.boot[S, R, N] <- res$sig.boot.pears
+      res.pears.fish[S, R, N] <- res$sig.fisher.pears
+      res.pears.hc4[S, R, N] <- res$sig.hc4.pears
+    }
+  }
+save(res.spear, res.pears.boot, res.pears.fish, 
+     res.pears.hc4, res.wcorr, res.pbend,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff00_g1h02_varyrho.RData")
+}
+
+beep(8)
+```
+
+
+
+
