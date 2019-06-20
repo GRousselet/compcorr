@@ -1,0 +1,621 @@
+---
+title: "Compare independent correlations: test coverage"
+author: "Guillaume A. Rousselet"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_caption: no
+    number_sections: no
+    toc: yes
+    toc_depth: 2
+---
+
+Look at confidence interval coverage for Pearson's correlation using Zou's method and the percentile bootstrap. Do the same for Spearman's correlation using the bootstrap. 
+Consider 3 cases:
+
+- g = h = 0, difference = 0.1, vary rho
+- g = 1, h = 0, difference = 0.1, vary rho
+- rho = 0.3, difference = 0.2, vary g, h = 0
+
+# Dependencies
+```{r}
+library(ggplot2)
+library(tibble)
+library(beepr)
+source("./functions/theme_gar.txt")
+## HC4 method to compare two independent Pearson's correlations
+source("./functions/hc4.txt")
+## g & h multivariate distributions
+source("./functions/ghmult.txt")
+## bootstrap + core corr functions
+source("./functions/corfun.txt")
+## meta-function for simulations
+source("./functions/twocor.all.txt")
+## plot functions
+source("./functions/make_figures.txt")
+```
+
+# g = h = 0, difference = 0.1, vary rho
+```{r}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 4000
+es <- 0.1 # effect size
+g <- 0
+h <- 0
+alpha <- .05
+nboot <- 599
+
+# coverage
+cov.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+cov.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+cov.pears.zou <- array(0, dim = c(nsim, nr, length(nseq)))
+# direction of discrepancy
+dis.spear <- array(NA, dim = c(nsim, nr, length(nseq)))
+dis.pears.boot <- array(NA, dim = c(nsim, nr, length(nseq)))
+dis.pears.zou <- array(NA, dim = c(nsim, nr, length(nseq)))
+# ci width
+wid.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+wid.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+wid.pears.zou <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 0.1, g=0, h=0, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 500 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      x1 <- out1[1:nseq[N],1]
+      y1 <- out1[1:nseq[N],2]
+      x2 <- out2[1:nseq[N],1]
+      y2 <- out2[1:nseq[N],2]
+
+      # BOOTSTRAP SAMPLES -------------
+      data1 <- matrix(sample(length(y1),size=length(y1)*nboot,replace=TRUE),nrow=nboot)
+      data2 <- matrix(sample(length(y2),size=length(y2)*nboot,replace=TRUE),nrow=nboot)
+      
+      # PEARSON ---------------
+      bvec1 <- apply(data1,1,pearsboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,pearsboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      ilow<-15
+      ihi<-584
+      if(length(y1)+length(y2) < 250){
+        ilow<-14
+        ihi<-585
+      }
+      if(length(y1)+length(y2) < 180){
+        ilow<-11
+        ihi<-588
+      }
+      if(length(y1)+length(y2) < 80){
+        ilow<-8
+        ihi<-592
+      }
+      if(length(y1)+length(y2) < 40){
+        ilow<-7
+        ihi<-593
+      }
+      bsort <- sort(bvec)
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.boot[S, R, N] <- 1
+      }
+      if(cov.pears.boot[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.boot[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.boot[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.pears.boot[S, R, N] <- ci[2] - ci[1] # ci width
+      
+      # ZOU 2007 --------------
+      r1 <- cor(x1, y1)
+      r2 <- cor(x2, y2)
+      n1 <- length(x1)
+      n2 <- length(x2)
+      ci <- r.ind.ci(r1, r2, n1, n2)
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.zou[S, R, N] <- 1
+      }
+      if(cov.pears.zou[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.zou[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.zou[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.pears.zou[S, R, N] <- ci[2] - ci[1] # ci width
+      
+      # SPEARMAN --------------
+      bvec1 <- apply(data1,1,spearboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,spearboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      bsort <- sort(bvec)
+      ilow <- round((alpha/2) * nboot)
+      ihi <- nboot - ilow
+      ilow <- ilow+1
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.spear[S, R, N] <- 1
+      }
+      if(cov.spear[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.spear[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.spear[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.spear[S, R, N] <- ci[2] - ci[1] # ci width
+    }
+  }
+}
+
+beep(8)
+
+save(cov.spear, cov.pears.boot, cov.pears.zou,
+     dis.spear, dis.pears.boot, dis.pears.zou,
+     wid.spear, wid.pears.boot, wid.pears.zou,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff01_g0h0_varyrho_covtest.RData")
+```
+
+## Pearson + Zou
+```{r}
+load("./data/diff01_g0h0_varyrho_covtest.RData")
+pres <- apply(cov.pears, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p.pears <- p + ggtitle("Pearson + Zou") +
+  theme(legend.position = "right") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.5, 1))
+p.pears
+```
+
+## Pearson + bootstrap
+```{r}
+pres <- apply(cov.pears, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p.pears <- p + ggtitle("Pearson + bootstrap") +
+  theme(legend.position = "right") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.5, 1))
+p.pears
+```
+
+## Spearman + bootstrap
+```{r}
+pres <- apply(cov.spear, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p.spear <- p + ggtitle("Spearman + bootstrap") +
+  theme(legend.position = "none") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.5, 1))
+p.spear
+```
+
+# g = 1, h = 0, vary rho
+```{r}
+rhoseq <- seq(0, 0.8, 0.1)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nr <- length(rhoseq)
+nsim <- 4000
+es <- 0.1 # effect size
+g <- 1
+h <- 0
+alpha <- .05
+nboot <- 599
+
+# coverage
+cov.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+cov.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+cov.pears.zou <- array(0, dim = c(nsim, nr, length(nseq)))
+# direction of discrepancy
+dis.spear <- array(NA, dim = c(nsim, nr, length(nseq)))
+dis.pears.boot <- array(NA, dim = c(nsim, nr, length(nseq)))
+dis.pears.zou <- array(NA, dim = c(nsim, nr, length(nseq)))
+# ci width
+wid.spear <- array(0, dim = c(nsim, nr, length(nseq)))
+wid.pears.boot <- array(0, dim = c(nsim, nr, length(nseq)))
+wid.pears.zou <- array(0, dim = c(nsim, nr, length(nseq)))
+
+for(R in 1:nr){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  rho <- rhoseq[R]
+  print(paste("sim diff 0.1, g=0, h=0, rho =",rho))
+  cmat1 <- matrix(c(1,rho,rho,1),2,2)
+  cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+  for(S in 1:nsim){
+    if(S %% 500 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      x1 <- out1[1:nseq[N],1]
+      y1 <- out1[1:nseq[N],2]
+      x2 <- out2[1:nseq[N],1]
+      y2 <- out2[1:nseq[N],2]
+
+      # BOOTSTRAP SAMPLES -------------
+      data1 <- matrix(sample(length(y1),size=length(y1)*nboot,replace=TRUE),nrow=nboot)
+      data2 <- matrix(sample(length(y2),size=length(y2)*nboot,replace=TRUE),nrow=nboot)
+      
+      # PEARSON ---------------
+      bvec1 <- apply(data1,1,pearsboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,pearsboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      ilow<-15
+      ihi<-584
+      if(length(y1)+length(y2) < 250){
+        ilow<-14
+        ihi<-585
+      }
+      if(length(y1)+length(y2) < 180){
+        ilow<-11
+        ihi<-588
+      }
+      if(length(y1)+length(y2) < 80){
+        ilow<-8
+        ihi<-592
+      }
+      if(length(y1)+length(y2) < 40){
+        ilow<-7
+        ihi<-593
+      }
+      bsort <- sort(bvec)
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.boot[S, R, N] <- 1
+      }
+      if(cov.pears.boot[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.boot[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.boot[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.pears.boot[S, R, N] <- ci[2] - ci[1] # ci width
+      
+      # ZOU 2007 --------------
+      r1 <- cor(x1, y1)
+      r2 <- cor(x2, y2)
+      n1 <- length(x1)
+      n2 <- length(x2)
+      ci <- r.ind.ci(r1, r2, n1, n2)
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.zou[S, R, N] <- 1
+      }
+      if(cov.pears.zou[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.zou[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.zou[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.pears.zou[S, R, N] <- ci[2] - ci[1] # ci width
+      
+      # SPEARMAN --------------
+      bvec1 <- apply(data1,1,spearboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,spearboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      bsort <- sort(bvec)
+      ilow <- round((alpha/2) * nboot)
+      ihi <- nboot - ilow
+      ilow <- ilow+1
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.spear[S, R, N] <- 1
+      }
+      if(cov.spear[S, R, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.spear[S, R, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.spear[S, R, N] <- 1 # right shift
+        }
+      }
+      wid.spear[S, R, N] <- ci[2] - ci[1] # ci width
+    }
+  }
+}
+
+beep(8)
+
+save(cov.spear, cov.pears.boot, cov.pears.zou,
+     dis.spear, dis.pears.boot, dis.pears.zou,
+     wid.spear, wid.pears.boot, wid.pears.zou,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/diff01_g1h0_varyrho_covtest.RData")
+```
+
+## Results: coverage
+
+### Pearson + Zou
+```{r}
+load("./data/diff01_g1h0_varyrho_covtest.RData")
+pres <- apply(cov.pears.zou, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Pearson + Zou") +
+  theme(legend.position = "right") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Pearson + bootstrap
+```{r}
+pres <- apply(cov.pears.boot, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Pearson + bootstrap") +
+  theme(legend.position = "right") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Spearman + bootstrap
+```{r}
+pres <- apply(cov.spear, c(2,3), mean)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Spearman + bootstrap") +
+  theme(legend.position = "none") +
+  labs(y = "Coverage prob.") + 
+  geom_hline(yintercept = 0.95) +
+  coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+## Results: width
+
+### Pearson + Zou
+```{r}
+pres <- apply(wid.pears.zou, c(2,3), median)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p + ggtitle("Pearson + Zou") +
+  theme(legend.position = "right") +
+  labs(y = "CI width") #+ 
+  # geom_hline(yintercept = 0.95) +
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Pearson + bootstrap
+```{r}
+pres <- apply(wid.pears.boot, c(2,3), median)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Pearson + bootstrap") +
+  theme(legend.position = "right") +
+  labs(y = "CI width") #+ 
+  # geom_hline(yintercept = 0.95) +
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Spearman + bootstrap
+```{r}
+pres <- apply(wid.spear.boot, c(2,3), median)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Spearman + bootstrap") +
+  theme(legend.position = "none") +
+  labs(y = "CI width") #+ 
+  # geom_hline(yintercept = 0.95) +
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+## Results: direction of discrepancy
+
+### Pearson + Zou
+```{r}
+pres <- apply(dis.pears.zou, c(2,3), mean, na.rm = TRUE)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p + ggtitle("Pearson + Zou") +
+  theme(legend.position = "right") +
+  labs(y = "CI width") + 
+  geom_hline(yintercept = 0) #+
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Pearson + bootstrap
+```{r}
+pres <- apply(dis.pears.boot, c(2,3), mean, na.rm = TRUE)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Pearson + bootstrap") +
+  theme(legend.position = "right") +
+  labs(y = "CI width") + 
+  geom_hline(yintercept = 0) #+
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+### Spearman + bootstrap
+```{r}
+pres <- apply(dis.spear.boot, c(2,3), mean, na.rm = TRUE)
+df <- mdf(pres, nseq, rhoseq)
+p <- plot.res.tp(df, ylim = c(0, 1))
+p <- p + ggtitle("Spearman + bootstrap") +
+  theme(legend.position = "none") +
+  labs(y = "CI width") + 
+  geom_hline(yintercept = 0) #+
+  # coord_cartesian(ylim = c(0.45, 1))
+p
+```
+
+# rho = 0.3, difference = 0.2, vary g
+```{r}
+gseq <- seq(0, 1, 0.1)
+ng <- length(gseq)
+nseq <- seq(50, 500, 50)
+nmax <- max(nseq)
+nsim <- 4000
+rho = 0.3
+es <- 0.2 # effect size
+h <- 0
+cmat1 <- matrix(c(1,rho,rho,1),2,2)
+cmat2 <- matrix(c(1,rho+es,rho+es,1),2,2)
+alpha <- .05
+nboot <- 599
+
+# coverage
+cov.spear <- array(0, dim = c(nsim, ng, length(nseq)))
+cov.pears.boot <- array(0, dim = c(nsim, ng, length(nseq)))
+cov.pears.zou <- array(0, dim = c(nsim, ng, length(nseq)))
+# direction of discrepancy
+dis.spear <- array(NA, dim = c(nsim, ng, length(nseq)))
+dis.pears.boot <- array(NA, dim = c(nsim, ng, length(nseq)))
+dis.pears.zou <- array(NA, dim = c(nsim, ng, length(nseq)))
+# ci width
+wid.spear <- array(0, dim = c(nsim, ng, length(nseq)))
+wid.pears.boot <- array(0, dim = c(nsim, ng, length(nseq)))
+wid.pears.zou <- array(0, dim = c(nsim, ng, length(nseq)))
+
+for(G in 1:ng){
+  beep(2)
+  set.seed(21) # set seed inside R loop to allow direct comparisons
+  # (numbers are the same except for the correlation)
+  g <- gseq[G]
+  print(paste("sim diff 0.1, g=0, h=0, rho =",rho))
+  for(S in 1:nsim){
+    if(S %% 500 == 0){print(paste0("sim ",S," / ",nsim,"..."))}
+    # generate max n sample
+    out1 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat1)  
+    out2 <- ghmul(nmax, g=g, h=h, p=2, cmat=cmat2) 
+    for(N in 1:length(nseq)){
+      # subsample from max n sample
+      x1 <- out1[1:nseq[N],1]
+      y1 <- out1[1:nseq[N],2]
+      x2 <- out2[1:nseq[N],1]
+      y2 <- out2[1:nseq[N],2]
+
+      # BOOTSTRAP SAMPLES -------------
+      data1 <- matrix(sample(length(y1),size=length(y1)*nboot,replace=TRUE),nrow=nboot)
+      data2 <- matrix(sample(length(y2),size=length(y2)*nboot,replace=TRUE),nrow=nboot)
+      
+      # PEARSON ---------------
+      bvec1 <- apply(data1,1,pearsboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,pearsboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      ilow<-15
+      ihi<-584
+      if(length(y1)+length(y2) < 250){
+        ilow<-14
+        ihi<-585
+      }
+      if(length(y1)+length(y2) < 180){
+        ilow<-11
+        ihi<-588
+      }
+      if(length(y1)+length(y2) < 80){
+        ilow<-8
+        ihi<-592
+      }
+      if(length(y1)+length(y2) < 40){
+        ilow<-7
+        ihi<-593
+      }
+      bsort <- sort(bvec)
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.boot[S, G, N] <- 1
+      }
+      if(cov.pears.boot[S, G, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.boot[S, G, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.boot[S, G, N] <- 1 # right shift
+        }
+      }
+      wid.pears.boot[S, G, N] <- ci[2] - ci[1] # ci width
+      
+      # ZOU 2007 --------------
+      r1 <- cor(x1, y1)
+      r2 <- cor(x2, y2)
+      n1 <- length(x1)
+      n2 <- length(x2)
+      ci <- r.ind.ci(r1, r2, n1, n2)
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.pears.zou[S, G, N] <- 1
+      }
+      if(cov.pears.zou[S, G, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.pears.zou[S, G, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.pears.zou[S, G, N] <- 1 # right shift
+        }
+      }
+      wid.pears.zou[S, G, N] <- ci[2] - ci[1] # ci width
+      
+      # SPEARMAN --------------
+      bvec1 <- apply(data1,1,spearboot,x1,y1) # A 1 by nboot matrix.
+      bvec2 <- apply(data2,1,spearboot,x2,y2) # A 1 by nboot matrix.
+      bvec <- bvec1 - bvec2
+      bsort <- sort(bvec)
+      ilow <- round((alpha/2) * nboot)
+      ihi <- nboot - ilow
+      ilow <- ilow+1
+      ci <- c(bsort[ilow],bsort[ihi])
+      if(-es >= ci[1] && -es <= ci[2]){
+        cov.spear[S, G, N] <- 1
+      }
+      if(cov.spear[S, G, N] == 0){ # direction of discrepancy
+        if(-es > ci[2]){
+        dis.spear[S, G, N] <- -1 # left shift
+        }
+        if(-es < ci[1]){
+        dis.spear[S, G, N] <- 1 # right shift
+        }
+      }
+      wid.spear[S, G, N] <- ci[2] - ci[1] # ci width
+    }
+  }
+}
+
+beep(8)
+
+save(cov.spear, cov.pears.boot, cov.pears.zou,
+     dis.spear, dis.pears.boot, dis.pears.zou,
+     wid.spear, wid.pears.boot, wid.pears.zou,
+     rhoseq, nseq, nsim, es, g, h,
+     file = "./data/rho03_diff02_h0_vg_covtest.RData")
+```
+
